@@ -156,102 +156,6 @@ def fig_iv_surface_3d(df_surface: pd.DataFrame, ticker: str) -> go.Figure:
     )
     return fig
 
-
-def fig_iv_heatmap(df_surface: pd.DataFrame, ticker: str) -> go.Figure:
-    fig = go.Figure()
-    df_surface = _prep_iv_surface(df_surface)
-    if df_surface is None or df_surface.empty:
-        fig.update_layout(title=f"IV Heatmap – {ticker} (nessun dato)")
-        return fig
-
-    piv = (
-        df_surface.pivot_table(index="T_years", columns="Moneyness", values="IV", aggfunc="mean")
-        .sort_index()
-        .sort_index(axis=1)
-    )
-    if piv.empty:
-        fig.update_layout(title=f"IV Heatmap – {ticker} (dati non pivotabili)")
-        return fig
-
-    fig.add_trace(go.Heatmap(x=piv.columns.values, y=piv.index.values, z=piv.values, colorbar=dict(title="IV")))
-    fig.update_layout(
-        title=f"IV Heatmap – {ticker}",
-        xaxis_title="Moneyness (K/F)",
-        yaxis_title="T (anni)",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
-
-def fig_iv_termstructure(df_surface: pd.DataFrame, ticker: str, m_levels=(0.9, 1.0, 1.1)) -> go.Figure:
-    fig = go.Figure()
-    df_surface = _prep_iv_surface(df_surface)
-    if df_surface is None or df_surface.empty:
-        fig.update_layout(title=f"IV Term Structure – {ticker} (nessun dato)")
-        return fig
-
-    piv = (
-        df_surface.pivot_table(index="T_years", columns="Moneyness", values="IV", aggfunc="mean")
-        .sort_index()
-        .sort_index(axis=1)
-    )
-    if piv.empty:
-        fig.update_layout(title=f"IV Term Structure – {ticker} (dati non pivotabili)")
-        return fig
-
-    cols = piv.columns.values.astype(float)
-    for m in m_levels:
-        idx = int(np.argmin(np.abs(cols - m)))
-        m_use = cols[idx]
-        fig.add_trace(go.Scatter(x=piv.index.values, y=piv[m_use].values, mode="lines+markers", name=f"m≈{m_use:.2f}"))
-
-    fig.update_layout(
-        title=f"IV Term Structure – {ticker}",
-        xaxis_title="T (anni)",
-        yaxis_title="IV",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
-
-# ==========================================================
-# CHARTS – IV SMILE (WIDE)
-# ==========================================================
-def fig_iv_smile(df_smile_wide: pd.DataFrame, ticker: str, max_expiries=6) -> go.Figure:
-    fig = go.Figure()
-    df_smile_wide = _std_ticker(df_smile_wide)
-    if df_smile_wide is None or df_smile_wide.empty:
-        fig.update_layout(title=f"IV Smile – {ticker} (nessun dato)")
-        return fig
-
-    df = df_smile_wide.copy()
-    df["Expiry_dt"] = _to_datetime_safe(df.get("Expiry"), dayfirst=False)
-
-    smile_cols = [c for c in df.columns if _is_float_like(c)]
-    if not smile_cols:
-        fig.update_layout(title=f"IV Smile – {ticker} (colonne smile non trovate)")
-        return fig
-
-    df = df.sort_values("Expiry_dt").head(max_expiries)
-
-    long = df.melt(id_vars=["Expiry", "Expiry_dt"], value_vars=smile_cols,
-                   var_name="Moneyness", value_name="IV")
-    long["Moneyness"] = _numeric(long["Moneyness"])
-    long["IV"] = _numeric(long["IV"])
-    long = long.dropna(subset=["Moneyness", "IV"]).sort_values(["Expiry_dt", "Moneyness"])
-
-    for exp, g in long.groupby("Expiry"):
-        fig.add_trace(go.Scatter(x=g["Moneyness"], y=g["IV"], mode="lines+markers", name=str(exp)))
-
-    fig.update_layout(
-        title=f"IV Smile (prime {max_expiries} expiry) – {ticker}",
-        xaxis_title="Moneyness (K/F)",
-        yaxis_title="IV",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
-
 # ==========================================================
 # CHARTS – CRASH PROB
 # ==========================================================
@@ -369,33 +273,6 @@ def fig_opt_timeseries(df: pd.DataFrame, ticker: str) -> go.Figure:
     return fig
 
 
-def fig_opt_scatter(df: pd.DataFrame, ticker: str) -> go.Figure:
-    fig = go.Figure()
-    df = _std_ticker(df)
-    if df is None or df.empty:
-        fig.update_layout(title=f"Pricing Scatter – {ticker} (nessun dato)")
-        return fig
-
-    d = df.copy()
-    d["Market_Price"] = _numeric(d.get("Market_Price"))
-    d["BS_Price"] = _numeric(d.get("BS_Price"))
-    d["Rab_Price"] = _numeric(d.get("Rab_Price"))
-
-    fig.add_trace(go.Scatter(x=d["Market_Price"], y=d["BS_Price"], mode="markers", name="BS"))
-    fig.add_trace(go.Scatter(x=d["Market_Price"], y=d["Rab_Price"], mode="markers", name="Rabinovitch"))
-
-    mn = np.nanmin(d["Market_Price"])
-    mx = np.nanmax(d["Market_Price"])
-    fig.add_trace(go.Scatter(x=[mn, mx], y=[mn, mx], mode="lines", name="y=x"))
-
-    fig.update_layout(
-        title=f"Model vs Market Scatter – {ticker}",
-        xaxis_title="Market Price",
-        yaxis_title="Model Price",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
 
 def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
     fig = go.Figure()
@@ -445,43 +322,11 @@ def fig_sens_diff_pct(df: pd.DataFrame, ticker: str) -> go.Figure:
     )
     return fig
 
-
-def fig_sens_shares(df: pd.DataFrame, ticker: str) -> go.Figure:
-    fig = go.Figure()
-    df = _std_ticker(df)
-    if df is None or df.empty:
-        fig.update_layout(title=f"Sensitivities shares – {ticker} (nessun dato)")
-        return fig
-
-    d = df.copy()
-    d["days"] = _numeric(d.get("days"))
-    for c in ["share_r", "share_v", "share_rho"]:
-        if c in d.columns:
-            d[c] = _numeric(d[c])
-    d = d.sort_values("days")
-
-    if not all(c in d.columns for c in ["share_r", "share_v", "share_rho"]):
-        fig.update_layout(title=f"Sensitivities shares – {ticker} (colonne share_* mancanti)")
-        return fig
-
-    fig.add_trace(go.Scatter(x=d["days"], y=d["share_r"], mode="lines+markers", name="share_r"))
-    fig.add_trace(go.Scatter(x=d["days"], y=d["share_v"], mode="lines+markers", name="share_v"))
-    fig.add_trace(go.Scatter(x=d["days"], y=d["share_rho"], mode="lines+markers", name="share_rho"))
-
-    fig.update_layout(
-        title=f"Sensitivities decomposition shares – {ticker}",
-        xaxis_title="days",
-        yaxis_title="share",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
-
 # ==========================================================
 # STREAMLIT UI
 # ==========================================================
 st.set_page_config(page_title="Thesis Dashboard", layout="wide")
-st.title("Paolo Gaudiano – Dalla pricing teorico alla realtà di mercato")
+st.title("Paolo Gaudiano – Dal pricing teorico alla realtà di mercato")
 
 data = load_all_data()
 tickers = available_tickers(data)
@@ -491,7 +336,7 @@ with st.sidebar:
     ticker = st.selectbox("ticker", tickers, index=0)
     tab = st.radio(
         "Sezione",
-        ["IV", "Crash Prob", "RND", "MND", "Option Pricing", "Sensitivities"],
+        ["IV", "Option Pricing", "Sensitivities", "RND", "MND", "Crash Prob"],
         index=0
     )
     st.divider()
@@ -507,13 +352,15 @@ if tab == "IV":
     df_smile = by_ticker(data["iv_smile"], ticker)
 
     st.plotly_chart(fig_iv_surface_3d(df_surf, ticker), use_container_width=True)
-    st.plotly_chart(fig_iv_heatmap(df_surf, ticker), use_container_width=True)
-    st.plotly_chart(fig_iv_termstructure(df_surf, ticker), use_container_width=True)
-    st.plotly_chart(fig_iv_smile(df_smile, ticker), use_container_width=True)
 
-elif tab == "Crash Prob":
-    df = by_ticker(data["crash"], ticker)
-    st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
+elif tab == "Option Pricing":
+    df = by_ticker(data["opt"], ticker)
+    st.plotly_chart(fig_opt_timeseries(df, ticker), use_container_width=True)
+    st.plotly_chart(fig_opt_error_hist(df, ticker), use_container_width=True)
+
+elif tab == "Sensitivities":
+    df = by_ticker(data["sens"], ticker)
+    st.plotly_chart(fig_sens_diff_pct(df, ticker), use_container_width=True)
 
 elif tab == "RND":
     df = by_ticker(data["rnd"], ticker)
@@ -523,16 +370,10 @@ elif tab == "MND":
     df = by_ticker(data["mnd"], ticker)
     st.plotly_chart(fig_mnd(df, ticker), use_container_width=True)
 
-elif tab == "Option Pricing":
-    df = by_ticker(data["opt"], ticker)
-    st.plotly_chart(fig_opt_timeseries(df, ticker), use_container_width=True)
-    st.plotly_chart(fig_opt_scatter(df, ticker), use_container_width=True)
-    st.plotly_chart(fig_opt_error_hist(df, ticker), use_container_width=True)
+elif tab == "Crash Prob":
+    df = by_ticker(data["crash"], ticker)
+    st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
 
-elif tab == "Sensitivities":
-    df = by_ticker(data["sens"], ticker)
-    st.plotly_chart(fig_sens_diff_pct(df, ticker), use_container_width=True)
-    st.plotly_chart(fig_sens_shares(df, ticker), use_container_width=True)
 
-st.divider()
-st.caption("Se qualche grafico è vuoto: controlla i nomi delle colonne nei CSV (Date/Expiry/Data ecc.).")
+#st.divider()
+#st.caption("Se qualche grafico è vuoto: controlla i nomi delle colonne nei CSV (Date/Expiry/Data ecc.).")
