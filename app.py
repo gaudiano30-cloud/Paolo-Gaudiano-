@@ -71,8 +71,12 @@ def _parse_deltaT_to_years(deltaT: pd.Series) -> pd.Series:
 
 
 # >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
-# anni float -> label standard (1Y/6M/3M/1M)
+# MODIFICA RICHIESTA: anni float -> label standard (1Y/6M/3M/1M)
 def _years_to_tenor_label(y: float) -> str:
+    """
+    Converte anni (float) in label standard:
+    1Y, 6M, 3M, 1M
+    """
     if pd.isna(y):
         return ""
     if y >= 0.9:
@@ -189,32 +193,72 @@ def by_ticker(df: pd.DataFrame, ticker: str) -> pd.DataFrame:
 
 
 # ==========================================================
-# TABELLE "STRIKE PIÙ PROBABILE" – DA TESI (RND / MND)
+# >>> AGGIUNTA: TABELLE "STRIKE PIÙ PROBABILE" (DA TESI PDF)
 # ==========================================================
-# Nota: qui sono inserite come DataFrame per mostrarle in Streamlit
-# sotto ai grafici RND/MND.
-# Se vuoi aggiungerne altre (altri ticker o altre tabelle), dimmelo e le estendo.
-
 RND_MODE_TABLES = {
-    "ISP": pd.DataFrame(
-        [
-            ["Rab-1Y", 3.42, 0.9724, 4.81,  1.39,  "40.73%", 3.52],
-            ["BS-1Y",  3.44, 0.9774, 4.81,  1.38,  "40.01%", 3.52],
-            ["Rab-6M", 3.84, 1.0025, 4.81,  0.97,  "25.19%", 3.83],
-            ["BS-6M",  3.84, 1.0025, 4.81,  0.97,  "25.19%", 3.83],
-            ["Rab-3M", 4.67, 0.9673, 4.81,  0.14,  "3.04%",  4.83],
-            ["BS-3M",  4.69, 0.9724, 4.81,  0.12,  "2.51%",  4.83],
-            ["Rab-1M", 4.86, 0.9824, 4.81, -0.05, "-1.07%",  4.95],
-            ["BS-1M",  4.86, 0.9824, 4.81, -0.05, "-1.07%",  4.95],
-        ],
-        columns=["Modello-ΔT", "Strike più probabile (K)", "Moneyness", "S a scadenza", "Δ(S–K)", "Δ(%)", "(S0)"],
-    )
+    "AAPL": pd.DataFrame([
+        {"Modello-ΔT": "Rab-1Y", "Strike più probabile (K)": 209.40, "Moneyness": 1.0729, "S a scadenza": 229.98, "Δ(S–K)": 20.58, "Δ(%)": "9.83%",  "(S0)": 195.18},
+        {"Modello-ΔT": "BS-1Y",  "Strike più probabile (K)": 211.36, "Moneyness": 1.0829, "S a scadenza": 229.98, "Δ(S–K)": 18.62, "Δ(%)": "8.81%",  "(S0)": 195.18},
+        {"Modello-ΔT": "Rab-6M", "Strike più probabile (K)": 239.58, "Moneyness": 0.9589, "S a scadenza": 229.98, "Δ(S–K)": -9.55, "Δ(%)": "-3.99%", "(S0)": 224.31},
+        {"Modello-ΔT": "BS-6M",  "Strike più probabile (K)": 239.50, "Moneyness": 0.9593, "S a scadenza": 229.98, "Δ(S–K)": -9.52, "Δ(%)": "-3.98%", "(S0)": 224.31},
+        {"Modello-ΔT": "Rab-3M", "Strike più probabile (K)": 244.39, "Moneyness": 0.9414, "S a scadenza": 229.98, "Δ(S–K)": -14.41, "Δ(%)": "-6.26%", "(S0)": 235.00},
+        {"Modello-ΔT": "BS-3M",  "Strike più probabile (K)": 244.73, "Moneyness": 0.9400, "S a scadenza": 229.98, "Δ(S–K)": -14.75, "Δ(%)": "-6.41%", "(S0)": 235.00},
+        {"Modello-ΔT": "Rab-1M", "Strike più probabile (K)": 244.93, "Moneyness": 0.9376, "S a scadenza": 229.98, "Δ(S–K)": -14.95, "Δ(%)": "-6.51%", "(S0)": 248.05},
+        {"Modello-ΔT": "BS-1M",  "Strike più probabile (K)": 246.18, "Moneyness": 0.9925, "S a scadenza": 229.98, "Δ(S–K)": -16.20, "Δ(%)": "-6.58%", "(S0)": 248.05},
+    ]),
+    "NVDA": pd.DataFrame([
+        {"Modello-ΔT": "Rab-1Y", "Strike più probabile (K)": 46.79,  "Moneyness": 0.7814, "S a scadenza": 137.71, "Δ(S–K)": 90.92, "Δ(%)": "194.35%", "(S0)": 59.87},
+        {"Modello-ΔT": "BS-1Y",  "Strike più probabile (K)": 51.59,  "Moneyness": 0.8586, "S a scadenza": 137.71, "Δ(S–K)": 86.41, "Δ(%)": "168.45%", "(S0)": 59.87},
+        {"Modello-ΔT": "Rab-6M", "Strike più probabile (K)": 105.78, "Moneyness": 0.8970, "S a scadenza": 137.71, "Δ(S–K)": 31.93, "Δ(%)": "30.18%",  "(S0)": 117.93},
+        {"Modello-ΔT": "BS-6M",  "Strike più probabile (K)": 105.95, "Moneyness": 0.8979, "S a scadenza": 137.71, "Δ(S–K)": 31.93, "Δ(%)": "30.18%",  "(S0)": 117.93},
+        {"Modello-ΔT": "Rab-3M", "Strike più probabile (K)": 121.70, "Moneyness": 0.8819, "S a scadenza": 137.71, "Δ(S–K)": 16.01, "Δ(%)": "13.15%",  "(S0)": 138.00},
+        {"Modello-ΔT": "BS-3M",  "Strike più probabile (K)": 121.78, "Moneyness": 0.8819, "S a scadenza": 137.71, "Δ(S–K)": 15.93, "Δ(%)": "13.15%",  "(S0)": 138.00},
+        {"Modello-ΔT": "Rab-1M", "Strike più probabile (K)": 125.35, "Moneyness": 0.9724, "S a scadenza": 137.71, "Δ(S–K)": 12.36, "Δ(%)": "9.86%",   "(S0)": 128.91},
+        {"Modello-ΔT": "BS-1M",  "Strike più probabile (K)": 125.35, "Moneyness": 0.9724, "S a scadenza": 137.71, "Δ(S–K)": 12.36, "Δ(%)": "9.86%",   "(S0)": 128.91},
+    ]),
+    "ISP": pd.DataFrame([
+        {"Modello-ΔT": "Rab-1Y", "Strike più probabile (K)": 3.42, "Moneyness": 0.9724, "S a scadenza": 4.81, "Δ(S–K)": 1.39, "Δ(%)": "40.73%", "(S0)": 3.52},
+        {"Modello-ΔT": "BS-1Y",  "Strike più probabile (K)": 3.44, "Moneyness": 0.9774, "S a scadenza": 4.81, "Δ(S–K)": 1.38, "Δ(%)": "40.01%", "(S0)": 3.52},
+        {"Modello-ΔT": "Rab-6M", "Strike più probabile (K)": 3.84, "Moneyness": 1.0025, "S a scadenza": 4.81, "Δ(S–K)": 0.97, "Δ(%)": "25.19%", "(S0)": 3.83},
+        {"Modello-ΔT": "BS-6M",  "Strike più probabile (K)": 3.84, "Moneyness": 1.0025, "S a scadenza": 4.81, "Δ(S–K)": 0.97, "Δ(%)": "25.19%", "(S0)": 3.83},
+        {"Modello-ΔT": "Rab-3M", "Strike più probabile (K)": 4.67, "Moneyness": 0.9673, "S a scadenza": 4.81, "Δ(S–K)": 0.14, "Δ(%)": "3.04%",  "(S0)": 4.83},
+        {"Modello-ΔT": "BS-3M",  "Strike più probabile (K)": 4.69, "Moneyness": 0.9724, "S a scadenza": 4.81, "Δ(S–K)": 0.12, "Δ(%)": "2.51%",  "(S0)": 4.83},
+        {"Modello-ΔT": "Rab-1M", "Strike più probabile (K)": 4.86, "Moneyness": 0.9824, "S a scadenza": 4.81, "Δ(S–K)": -0.05, "Δ(%)": "-1.07%", "(S0)": 4.95},
+        {"Modello-ΔT": "BS-1M",  "Strike più probabile (K)": 4.86, "Moneyness": 0.9824, "S a scadenza": 4.81, "Δ(S–K)": -0.05, "Δ(%)": "-1.07%", "(S0)": 4.95},
+    ])
 }
 
-# Placeholder: se nel tuo PDF hai anche la tabella MND corrispondente per ISP (o altri),
-# incollamela/mandami screenshot e la aggiungo identica.
 MND_MODE_TABLES = {
-    # "ISP": pd.DataFrame([...], columns=[...])
+    "AAPL": pd.DataFrame([
+        {"Data": "23/01/2024", "Modello": "MND Rab", "ΔT": "1Y", "Strike più prob. (K)": 211.36, "Moneyness": 1.0829, "S a scadenza": 229.98, "Δ(S−K)": 18.62, "Δ (%)": "8.81%",  "S0": 195.18},
+        {"Data": "23/01/2024", "Modello": "MND BS",  "ΔT": "1Y", "Strike più prob. (K)": 212.34, "Moneyness": 1.0879, "S a scadenza": 229.98, "Δ(S−K)": 17.64, "Δ (%)": "8.31%",  "S0": 195.18},
+        {"Data": "19/07/2024", "Modello": "MND Rab", "ΔT": "6M", "Strike più prob. (K)": 239.53, "Moneyness": 1.0678, "S a scadenza": 229.98, "Δ(S−K)": -9.55, "Δ (%)": "-3.99%", "S0": 224.31},
+        {"Data": "19/07/2024", "Modello": "MND BS",  "ΔT": "6M", "Strike più prob. (K)": 240.65, "Moneyness": 1.0729, "S a scadenza": 229.98, "Δ(S−K)": -10.67, "Δ (%)": "-4.44%", "S0": 224.31},
+        {"Data": "18/10/2024", "Modello": "MND Rab", "ΔT": "3M", "Strike più prob. (K)": 249.76, "Moneyness": 1.0628, "S a scadenza": 229.98, "Δ(S−K)": -19.78, "Δ (%)": "-7.92%", "S0": 235.00},
+        {"Data": "18/10/2024", "Modello": "MND BS",  "ΔT": "3M", "Strike più prob. (K)": 249.76, "Moneyness": 1.0628, "S a scadenza": 229.98, "Δ(S−K)": -19.78, "Δ (%)": "-7.92%", "S0": 235.00},
+        {"Data": "18/12/2024", "Modello": "MND Rab", "ΔT": "1M", "Strike più prob. (K)": 246.18, "Moneyness": 0.9925, "S a scadenza": 229.98, "Δ(S−K)": -16.20, "Δ (%)": "-6.58%", "S0": 248.05},
+        {"Data": "18/12/2024", "Modello": "MND BS",  "ΔT": "1M", "Strike più prob. (K)": 246.18, "Moneyness": 0.9925, "S a scadenza": 229.98, "Δ(S−K)": -16.20, "Δ (%)": "-6.58%", "S0": 248.05},
+    ]),
+    "NVDA": pd.DataFrame([
+        {"Data": "23/01/2024", "Modello": "MND Rab", "ΔT": "1Y", "Strike più prob. (K)": 70.55, "Moneyness": 1.1784, "S a scadenza": 137.71, "Δ(S−K)": 67.16, "Δ (%)": "95.18%", "S0": 59.87},
+        {"Data": "23/01/2024", "Modello": "MND BS",  "ΔT": "1Y", "Strike più prob. (K)": 81.99, "Moneyness": 1.3693, "S a scadenza": 137.71, "Δ(S−K)": 55.72, "Δ (%)": "67.97%", "S0": 59.87},
+        {"Data": "19/07/2024", "Modello": "MND Rab", "ΔT": "6M", "Strike più prob. (K)": 106.37, "Moneyness": 0.9020, "S a scadenza": 137.71, "Δ(S−K)": 31.34, "Δ (%)": "29.46%", "S0": 117.93},
+        {"Data": "19/07/2024", "Modello": "MND BS",  "ΔT": "6M", "Strike più prob. (K)": 106.37, "Moneyness": 0.9020, "S a scadenza": 137.71, "Δ(S−K)": 31.34, "Δ (%)": "29.46%", "S0": 117.93},
+        {"Data": "18/10/2024", "Modello": "MND Rab", "ΔT": "3M", "Strike più prob. (K)": 150.14, "Moneyness": 1.0879, "S a scadenza": 137.71, "Δ(S−K)": -12.43, "Δ (%)": "-8.28%", "S0": 138.00},
+        {"Data": "18/10/2024", "Modello": "MND BS",  "ΔT": "3M", "Strike più prob. (K)": 150.14, "Moneyness": 1.0879, "S a scadenza": 137.71, "Δ(S−K)": -12.43, "Δ (%)": "-8.28%", "S0": 138.00},
+        {"Data": "18/12/2024", "Modello": "MND Rab", "ΔT": "1M", "Strike più prob. (K)": 126.64, "Moneyness": 0.9824, "S a scadenza": 137.71, "Δ(S−K)": 11.07, "Δ (%)": "8.74%", "S0": 128.91},
+        {"Data": "18/12/2024", "Modello": "MND BS",  "ΔT": "1M", "Strike più prob. (K)": 126.64, "Moneyness": 0.9824, "S a scadenza": 137.71, "Δ(S−K)": 11.07, "Δ (%)": "8.74%", "S0": 128.91},
+    ]),
+    "ISP": pd.DataFrame([
+        {"Data": "25/06/2024", "Modello": "MND Rab", "ΔT": "1Y", "Strike più prob. (K)": 3.44, "Moneyness": 0.9774, "S a scadenza": 4.81, "Δ(S−K)": 1.38, "Δ (%)": "40.01%", "S0": 3.52},
+        {"Data": "25/06/2024", "Modello": "MND BS",  "ΔT": "1Y", "Strike più prob. (K)": 3.45, "Moneyness": 0.9824, "S a scadenza": 4.81, "Δ(S−K)": 1.36, "Δ (%)": "39.29%", "S0": 3.52},
+        {"Data": "20/12/2024", "Modello": "MND Rab", "ΔT": "6M", "Strike più prob. (K)": 3.86, "Moneyness": 1.0075, "S a scadenza": 4.81, "Δ(S−K)": 0.95, "Δ (%)": "24.57%", "S0": 3.83},
+        {"Data": "20/12/2024", "Modello": "MND BS",  "ΔT": "6M", "Strike più prob. (K)": 3.86, "Moneyness": 1.0075, "S a scadenza": 4.81, "Δ(S−K)": 0.95, "Δ (%)": "24.57%", "S0": 3.83},
+        {"Data": "21/03/2025", "Modello": "MND Rab", "ΔT": "3M", "Strike più prob. (K)": 4.74, "Moneyness": 0.9824, "S a scadenza": 4.81, "Δ(S−K)": 0.07, "Δ (%)": "1.46%",  "S0": 4.83},
+        {"Data": "21/03/2025", "Modello": "MND BS",  "ΔT": "3M", "Strike più prob. (K)": 5.13, "Moneyness": 1.0628, "S a scadenza": 4.81, "Δ(S−K)": -0.32, "Δ (%)": "-6.21%", "S0": 4.83},
+        {"Data": "21/05/2025", "Modello": "MND Rab", "ΔT": "1M", "Strike più prob. (K)": 4.89, "Moneyness": 0.9874, "S a scadenza": 4.81, "Δ(S−K)": -0.08, "Δ (%)": "-1.57%", "S0": 4.95},
+        {"Data": "21/05/2025", "Modello": "MND BS",  "ΔT": "1M", "Strike più prob. (K)": 4.89, "Moneyness": 0.9874, "S a scadenza": 4.81, "Δ(S−K)": -0.08, "Δ (%)": "-1.57%", "S0": 4.95},
+    ]),
 }
 
 def _mode_table_from_pdf(ticker: str, measure: str) -> pd.DataFrame:
@@ -225,6 +269,9 @@ def _mode_table_from_pdf(ticker: str, measure: str) -> pd.DataFrame:
     if m == "MND":
         return MND_MODE_TABLES.get(t, pd.DataFrame())
     return pd.DataFrame()
+# ==========================================================
+# <<< FINE AGGIUNTA
+# ==========================================================
 
 
 # ==========================================================
@@ -288,13 +335,13 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
 
     d = df.copy()
     d["DeltaT_years"] = _parse_deltaT_to_years(d.get("DeltaT"))
-    d["_tenor_lbl"] = d["DeltaT_years"].map(_years_to_tenor_label)
+    d["_tenor_lbl"] = d["DeltaT_years"].map(_years_to_tenor_label)  # <-- MODIFICA
     d["P_Q"] = _numeric(d.get("P_crash_Q (RND)"))
     d["P_P"] = _numeric(d.get("P_crash_P (MND)"))
     d = d.sort_values("DeltaT_years")
 
-    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_Q"], name="P_crash_Q (RND)"))
-    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_P"], name="P_crash_P (MND)"))
+    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_Q"], name="P_crash_Q (RND)"))  # <-- MODIFICA
+    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_P"], name="P_crash_P (MND)"))  # <-- MODIFICA
 
     fig.update_layout(
         title=f"Crash Probabilities – {ticker}",
@@ -302,7 +349,7 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
         xaxis_title="DeltaT",
         yaxis_title="Probabilità",
         margin=dict(l=0, r=0, t=50, b=0),
-        xaxis=dict(categoryorder="array", categoryarray=["1M", "3M", "6M", "1Y"]),
+        xaxis=dict(categoryorder="array", categoryarray=["1M", "3M", "6M", "1Y"]),  # <-- MODIFICA
     )
     return fig
 
@@ -489,13 +536,18 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
 
 
 # ==========================================================
-# CHARTS – RND / MND DENSITIES (ONLY Moneyness, ALL DATES, BS/RAB/BOTH)
+# CHARTS – RND / MND DENSITIES (ONLY MONEyness, ALL DATES, BS/RAB/BOTH)
 # ==========================================================
 def _normalize_model(s: str) -> str:
     return str(s).strip().lower()
 
 
 def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_choice: str) -> go.Figure:
+    """
+    Mostra SOLO Moneyness.
+    Mostra TUTTE le date sovrapposte.
+    model_choice: "Rabinovitch" / "BS" / "Entrambi"
+    """
     fig = go.Figure()
     df_dens = _normalize_density_columns(df_dens)
     d = by_ticker(df_dens, ticker)
@@ -504,12 +556,14 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
         fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
         return fig
 
+    # filtra misura
     d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
     d = d[d["Measure"] == str(measure).upper().strip()]
     if d.empty:
         fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
         return fig
 
+    # numerici
     d["Moneyness"] = _numeric(d["Moneyness"])
     d["Density"] = _numeric(d["Density"])
     d = d.dropna(subset=["Moneyness", "Density"])
@@ -517,6 +571,7 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
         fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
         return fig
 
+    # date (non obbligatoria, ma serve per distinguere in legenda)
     if "date" in d.columns:
         dt = pd.to_datetime(d["date"], errors="coerce", dayfirst=False)
         dt2 = pd.to_datetime(d["date"], errors="coerce", dayfirst=True)
@@ -525,6 +580,7 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
     else:
         d["_date_dt"] = pd.NaT
 
+    # modello filter
     d["Modello_norm"] = d["Modello"].map(_normalize_model)
     choice = str(model_choice).strip().lower()
 
@@ -533,6 +589,7 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
             return True
         if choice == "bs":
             return ("bs" in model_norm) or ("black" in model_norm and "scholes" in model_norm)
+        # rabinovitch
         return ("rab" in model_norm) or ("rabin" in model_norm)
 
     d = d[d["Modello_norm"].map(keep_row)]
@@ -540,9 +597,11 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
         fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) ({model_choice}) (nessun dato)")
         return fig
 
+    # ordine tenori
     d["_T"] = _parse_deltaT_to_years(d["DeltaT"]).fillna(999.0)
-    d["_tenor_lbl"] = d["_T"].map(_years_to_tenor_label)
+    d["_tenor_lbl"] = d["_T"].map(_years_to_tenor_label)  # <-- MODIFICA
 
+    # label date per legenda
     if d["_date_dt"].notna().any():
         d["_date_lbl"] = d["_date_dt"].dt.date.astype(str)
     elif "date" in d.columns:
@@ -550,10 +609,11 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
     else:
         d["_date_lbl"] = ""
 
-    group_cols = ["Modello", "_tenor_lbl", "_date_lbl"]
+    # gruppa per (Modello, TenorLabel, date) così vedi tutte sovrapposte
+    group_cols = ["Modello", "_tenor_lbl", "_date_lbl"]  # <-- MODIFICA
     for (model, tenor_lbl, dtlbl), g in d.sort_values(["_T", "Moneyness"]).groupby(group_cols, dropna=False):
         g = g.sort_values("Moneyness")
-        name = f"{tenor_lbl} | {dtlbl} | {model}"
+        name = f"{tenor_lbl} | {dtlbl} | {model}"  # <-- MODIFICA
         fig.add_trace(go.Scatter(
             x=g["Moneyness"],
             y=g["Density"],
@@ -623,11 +683,12 @@ elif section == "RND":
         use_container_width=True
     )
 
-    # TABELLA RND (strike più probabile)
+    # >>> AGGIUNTA TABELLA RND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "RND")
     if tbl is not None and not tbl.empty:
         st.subheader("Strike più probabile (RND) – tabella")
         st.dataframe(tbl, use_container_width=True, hide_index=True)
+    # <<<
 
 elif section == "MND":
     df_dens = data.get("dens", pd.DataFrame())
@@ -636,13 +697,12 @@ elif section == "MND":
         use_container_width=True
     )
 
-    # TABELLA MND (strike più probabile)
+    # >>> AGGIUNTA TABELLA MND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "MND")
     if tbl is not None and not tbl.empty:
         st.subheader("Strike più probabile (MND) – tabella")
         st.dataframe(tbl, use_container_width=True, hide_index=True)
-    else:
-        st.info("Tabella MND non presente nel dizionario: se mi mandi la tabella dal PDF te la inserisco identica.")
+    # <<<
 
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
