@@ -70,6 +70,27 @@ def _parse_deltaT_to_years(deltaT: pd.Series) -> pd.Series:
     return deltaT.map(one)
 
 
+# >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+# MODIFICA RICHIESTA: anni float -> label standard (1Y/6M/3M/1M)
+def _years_to_tenor_label(y: float) -> str:
+    """
+    Converte anni (float) in label standard:
+    1Y, 6M, 3M, 1M
+    """
+    if pd.isna(y):
+        return ""
+    if y >= 0.9:
+        return "1Y"
+    if 0.45 <= y < 0.9:
+        return "6M"
+    if 0.20 <= y < 0.45:
+        return "3M"
+    if 0.05 <= y < 0.20:
+        return "1M"
+    return ""
+# <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+
 def _normalize_density_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normalizza le colonne del CSV densità a questi nomi standard:
@@ -232,12 +253,13 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
 
     d = df.copy()
     d["DeltaT_years"] = _parse_deltaT_to_years(d.get("DeltaT"))
+    d["_tenor_lbl"] = d["DeltaT_years"].map(_years_to_tenor_label)  # <-- MODIFICA
     d["P_Q"] = _numeric(d.get("P_crash_Q (RND)"))
     d["P_P"] = _numeric(d.get("P_crash_P (MND)"))
     d = d.sort_values("DeltaT_years")
 
-    fig.add_trace(go.Bar(x=d.get("DeltaT"), y=d["P_Q"], name="P_crash_Q (RND)"))
-    fig.add_trace(go.Bar(x=d.get("DeltaT"), y=d["P_P"], name="P_crash_P (MND)"))
+    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_Q"], name="P_crash_Q (RND)"))  # <-- MODIFICA
+    fig.add_trace(go.Bar(x=d["_tenor_lbl"], y=d["P_P"], name="P_crash_P (MND)"))  # <-- MODIFICA
 
     fig.update_layout(
         title=f"Crash Probabilities – {ticker}",
@@ -245,6 +267,7 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
         xaxis_title="DeltaT",
         yaxis_title="Probabilità",
         margin=dict(l=0, r=0, t=50, b=0),
+        xaxis=dict(categoryorder="array", categoryarray=["1M", "3M", "6M", "1Y"]),  # <-- MODIFICA
     )
     return fig
 
@@ -494,6 +517,7 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
 
     # ordine tenori
     d["_T"] = _parse_deltaT_to_years(d["DeltaT"]).fillna(999.0)
+    d["_tenor_lbl"] = d["_T"].map(_years_to_tenor_label)  # <-- MODIFICA
 
     # label date per legenda
     if d["_date_dt"].notna().any():
@@ -503,11 +527,11 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
     else:
         d["_date_lbl"] = ""
 
-    # gruppa per (Modello, DeltaT, date) così vedi tutte sovrapposte
-    group_cols = ["Modello", "DeltaT", "_date_lbl"]
-    for (model, tenor, dtlbl), g in d.sort_values(["_T", "Moneyness"]).groupby(group_cols, dropna=False):
+    # gruppa per (Modello, TenorLabel, date) così vedi tutte sovrapposte
+    group_cols = ["Modello", "_tenor_lbl", "_date_lbl"]  # <-- MODIFICA
+    for (model, tenor_lbl, dtlbl), g in d.sort_values(["_T", "Moneyness"]).groupby(group_cols, dropna=False):
         g = g.sort_values("Moneyness")
-        name = f"{tenor} | {dtlbl} | {model}"
+        name = f"{tenor_lbl} | {dtlbl} | {model}"  # <-- MODIFICA
         fig.add_trace(go.Scatter(
             x=g["Moneyness"],
             y=g["Density"],
@@ -587,4 +611,3 @@ elif section == "MND":
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
-
