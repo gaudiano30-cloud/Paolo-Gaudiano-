@@ -632,6 +632,218 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_ch
 
 
 # ==========================================================
+# >>> NUOVO GRAFICO: Probabilità per intervallo di Moneyness (come tua figura)
+# ==========================================================
+def _compute_expiry_from_date_and_T(date_series: pd.Series, T_years: pd.Series) -> pd.Series:
+    """
+    Approssimazione robusta: Expiry = date + round(T_years*365) giorni.
+    (Ti serve per replicare 'exp 2025-06-20' partendo da date + DeltaT)
+    """
+    base = pd.to_datetime(date_series, errors="coerce", dayfirst=False)
+    base2 = pd.to_datetime(date_series, errors="coerce", dayfirst=True)
+    base = base.fillna(base2)
+    days = (pd.to_numeric(T_years, errors="coerce") * 365.0).round()
+    return base + pd.to_timedelta(days, unit="D")
+
+
+def _apply_model_choice(d: pd.DataFrame, model_choice: str) -> pd.DataFrame:
+    d = d.copy()
+    d["Modello_norm"] = d["Modello"].map(_normalize_model)
+    choice = str(model_choice).strip().lower()
+
+    def keep_row(model_norm: str) -> bool:
+        if choice == "entrambi":
+            return True
+        if choice == "bs":
+            return ("bs" in model_norm) or ("black" in model_norm and "scholes" in model_norm)
+        return ("rab" in model_norm) or ("rabin" in model_norm)
+
+    return d[d["Modello_norm"].map(keep_row)]
+
+
+def fig_moneyness_prob_hist(
+    df_dens: pd.DataFrame,
+    ticker: str,
+    measure: str,
+    model_choice: str,
+    expiry_choice: str,
+    bin_width: float = 0.05,
+) -> go.Figure:
+    """
+    Istogramma come in figura:
+    - y = Probabilità per intervallo di Moneyness (%)
+    - overlay di: Rab/BS per 1Y/6M/3M/1M
+    - expiry_choice: string 'YYYY-MM-DD' (scelta in sidebar)
+    """
+    fig = go.Figure()
+    df_dens = _normalize_density_columns(df_dens)
+    d = by_ticker(df_dens, ticker)
+
+    if d is None or d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (nessun dato)")
+        return fig
+
+    d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
+    d = d[d["Measure"] == str(measure).upper().strip()]
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (nessun dato)")
+        return fig
+
+    # numerici base
+    d["Moneyness"] = _numeric(d["Moneyness"])
+    d["Density"] = _numeric(d["Density"])
+    d["_T"] = _parse_deltaT_to_years(d["DeltaT"])
+    d = d.dropna(subset=["Moneyness", "Density", "_T"])
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (nessun dato)")
+        return fig
+
+    # calcolo expiry e filtro per expiry scelto
+    if "date" not in d.columns:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (manca colonna date)")
+        return fig
+
+    d["_expiry_dt"] = _compute_expiry_from_date_and_T(d["date"], d["_T"])
+    d = d.dropna(subset=["_expiry_dt"])
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (nessun dato)")
+        return fig
+
+    expiry_choice = str(expiry_choice).strip()
+    try:
+        expiry_dt = pd.to_datetime(expiry_choice, errors="coerce")
+    except Exception:
+        expiry_dt = pd.NaT
+
+    if pd.isna(expiry_dt):
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (expiry non valido)")
+        return fig
+
+    # tolleranza 1 giorno per robustezza
+    d = d[(d["_expiry_dt"] - expiry_dt).abs() <= pd.Timedelta(days=1)]
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness – exp {expiry_choice} (nessun dato)")
+        return fig
+
+    # filtro modello (Rab/BS/Entrambi)
+    d = _apply_model_choice(d, model_choice)
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness – {model_choice} (nessun dato)")
+        return fig
+
+    # tenori standard
+    d["_tenor_lbl"] = d["_T"].map(_years_to_tenor_label)
+
+    # bins
+    x_min = float(np.nanmin(d["Moneyness"].values))
+    x_max = float(np.nanmax(d["Moneyness"].values))
+    if not np.isfinite(x_min) or not np.isfinite(x_max) or x_max <= x_min:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (range non valido)")
+        return fig
+
+    # allinea bordi bin
+    left = np.floor(x_min / bin_width) * bin_width
+    right = np.ceil(x_max / bin_width) * bin_width
+    edges = np.arange(left, right + bin_width * 0.999, bin_width)
+    if len(edges) < 3:
+        fig.update_layout(title=f"{ticker} – Probabilità per intervallo di Moneyness (binning insufficiente)")
+        return fig
+
+    centers = (edges[:-1] + edges[1:]) / 2.0
+
+    # per ogni (Modello, Tenor) integriamo Density dx e poi aggreghiamo per bin
+    for (model, tenor_lbl), g in d.groupby(["Modello", "_tenor_lbl"], dropna=False):
+        gg = g.sort_values("Moneyness").copy()
+        x = gg["Moneyness"].values.astype(float)
+        f = gg["Density"].values.astype(float)
+
+        if len(x) < 2:
+            continue
+
+        # dx locale: differenze tra punti (stile integrazione semplice)
+        dx = np.empty_like(x)
+        dx[0] = x[1] - x[0]
+        dx[-1] = x[-1] - x[-2]
+        if len(x) > 2:
+            dx[1:-1] = (x[2:] - x[:-2]) / 2.0
+
+        mass = f * dx
+        mass = np.where(np.isfinite(mass), mass, 0.0)
+        total = mass.sum()
+        if total <= 0:
+            continue
+        mass = mass / total  # normalizza a 1
+
+        # assegna ogni punto a un bin
+        idx = np.digitize(x, edges) - 1
+        idx = np.clip(idx, 0, len(centers) - 1)
+
+        prob_bin = np.zeros(len(centers), dtype=float)
+        for i, m in zip(idx, mass):
+            prob_bin[i] += float(m)
+
+        y_pct = prob_bin * 100.0
+
+        name = f"{model} {tenor_lbl}".strip()
+        fig.add_trace(go.Bar(
+            x=centers,
+            y=y_pct,
+            name=name,
+            opacity=0.60
+        ))
+
+    fig.update_layout(
+        title=f"{ticker} – Probabilità per intervallo di Moneyness – exp {expiry_choice}",
+        xaxis_title="Moneyness (K / S)",
+        yaxis_title="Probabilità (%)",
+        barmode="overlay",
+        margin=dict(l=0, r=0, t=50, b=0),
+        legend=dict(orientation="v"),
+    )
+
+    # asse x “pulito”
+    fig.update_xaxes(tickformat=".2f")
+    fig.update_yaxes(ticksuffix="%")
+    return fig
+
+
+def available_expiries_for_density(df_dens: pd.DataFrame, ticker: str, measure: str, model_choice: str):
+    """
+    Ritorna lista di expiry (YYYY-MM-DD) disponibili calcolate come date + DeltaT.
+    """
+    df_dens = _normalize_density_columns(df_dens)
+    d = by_ticker(df_dens, ticker)
+    if d is None or d.empty:
+        return []
+
+    d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
+    d = d[d["Measure"] == str(measure).upper().strip()]
+    if d.empty or "date" not in d.columns:
+        return []
+
+    d["_T"] = _parse_deltaT_to_years(d["DeltaT"])
+    d = d.dropna(subset=["_T"])
+    if d.empty:
+        return []
+
+    d = _apply_model_choice(d, model_choice)
+    if d.empty:
+        return []
+
+    d["_expiry_dt"] = _compute_expiry_from_date_and_T(d["date"], d["_T"])
+    d = d.dropna(subset=["_expiry_dt"])
+    if d.empty:
+        return []
+
+    # lista ordinata
+    exps = sorted(d["_expiry_dt"].dt.date.astype(str).unique().tolist())
+    return exps
+# ==========================================================
+# <<< FINE NUOVO GRAFICO
+# ==========================================================
+
+
+# ==========================================================
 # STREAMLIT UI (MENU A SINISTRA)
 # ==========================================================
 st.set_page_config(page_title="Thesis Dashboard", layout="wide")
@@ -646,10 +858,25 @@ with st.sidebar:
     section = st.radio("Sezione", SECTIONS, index=0)
 
     model_choice = "Rabinovitch"
+    expiry_choice = ""
     if section in ["RND", "MND"]:
         st.divider()
         st.subheader("RND/MND options")
         model_choice = st.radio("Modello", ["Rabinovitch", "BS", "Entrambi"], index=0, horizontal=True)
+
+        # >>> aggiunta select expiry (calcolata come date + DeltaT)
+        df_dens_sidebar = data.get("dens", pd.DataFrame())
+        exp_list = available_expiries_for_density(
+            df_dens_sidebar,
+            ticker=ticker,
+            measure=("RND" if section == "RND" else "MND"),
+            model_choice=model_choice
+        )
+        if exp_list:
+            expiry_choice = st.selectbox("Expiry (date + ΔT)", exp_list, index=0)
+        else:
+            expiry_choice = ""
+        # <<<
 
     st.divider()
     st.caption(f"Data directory: {DATA_DIR}")
@@ -683,6 +910,17 @@ elif section == "RND":
         use_container_width=True
     )
 
+    # >>> nuovo istogramma probabilità per bin di moneyness
+    if expiry_choice:
+        st.plotly_chart(
+            fig_moneyness_prob_hist(
+                df_dens, ticker, measure="RND", model_choice=model_choice,
+                expiry_choice=expiry_choice, bin_width=0.05
+            ),
+            use_container_width=True
+        )
+    # <<<
+
     # >>> AGGIUNTA TABELLA RND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "RND")
     if tbl is not None and not tbl.empty:
@@ -697,6 +935,17 @@ elif section == "MND":
         use_container_width=True
     )
 
+    # >>> nuovo istogramma probabilità per bin di moneyness
+    if expiry_choice:
+        st.plotly_chart(
+            fig_moneyness_prob_hist(
+                df_dens, ticker, measure="MND", model_choice=model_choice,
+                expiry_choice=expiry_choice, bin_width=0.05
+            ),
+            use_container_width=True
+        )
+    # <<<
+
     # >>> AGGIUNTA TABELLA MND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "MND")
     if tbl is not None and not tbl.empty:
@@ -707,4 +956,3 @@ elif section == "MND":
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
-
