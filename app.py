@@ -181,7 +181,7 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
 
 
 # ==========================================================
-# CHARTS – OPTION PRICING (core + mispricing + sensitivity %)
+# CHARTS – OPTION PRICING (core + mispricing% + rho sensitivity)
 # ==========================================================
 def fig_opt_timeseries(df: pd.DataFrame, ticker: str) -> go.Figure:
     fig = go.Figure()
@@ -199,13 +199,157 @@ def fig_opt_timeseries(df: pd.DataFrame, ticker: str) -> go.Figure:
     d["Rab_Price"] = _numeric(d.get("Rab_Price"))
 
     fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["Market_Price"], mode="lines", name="Market"))
-    fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["BS_Price"], mode="lines", name="BS"))
+    fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["BS_Price"], mode="lines", name="Black–Scholes"))
     fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["Rab_Price"], mode="lines", name="Rabinovitch"))
 
     fig.update_layout(
-        title=f"Option Pricing – Market vs Models – {ticker}",
+        title=f"{ticker} – Option Price (Market vs Models)",
         xaxis_title="Date",
-        yaxis_title="Price",
+        yaxis_title="Option Price",
+        margin=dict(l=0, r=0, t=50, b=0),
+    )
+    return fig
+
+
+def fig_mispricing_pct_timeseries(df: pd.DataFrame, ticker: str) -> go.Figure:
+    """
+    Grafico come in tesi: Mispricing Model to Market in % nel tempo
+    (BS-Mkt)/Mkt e (Rab-Mkt)/Mkt
+    """
+    fig = go.Figure()
+    df = _std_ticker(df)
+    if df is None or df.empty:
+        fig.update_layout(title=f"Mispricing Model to Market – {ticker} (nessun dato)")
+        return fig
+
+    d = df.copy()
+    d["Date_dt"] = _to_datetime_safe(d.get("Date"), dayfirst=False)
+    d = d.sort_values("Date_dt")
+
+    mkt = _numeric(d.get("Market_Price"))
+    bs = _numeric(d.get("BS_Price"))
+    rab = _numeric(d.get("Rab_Price"))
+
+    d["mkt"] = mkt
+    d["bs"] = bs
+    d["rab"] = rab
+
+    d = d.dropna(subset=["Date_dt", "mkt", "bs", "rab"])
+    d = d[d["mkt"] != 0]
+
+    if d.empty:
+        fig.update_layout(title=f"Mispricing Model to Market – {ticker} (nessun dato)")
+        return fig
+
+    d["mis_bs_pct"] = (d["bs"] - d["mkt"]) / d["mkt"] * 100.0
+    d["mis_rab_pct"] = (d["rab"] - d["mkt"]) / d["mkt"] * 100.0
+
+    fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["mis_bs_pct"], mode="lines", name="(BS-Mkt)/Mkt"))
+    fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["mis_rab_pct"], mode="lines", name="(Rab-Mkt)/Mkt"))
+
+    # linea 0
+    fig.add_hline(y=0, line_dash="dash")
+
+    fig.update_layout(
+        title=f"Mispricing Model to Market ({ticker})",
+        xaxis_title="Date",
+        yaxis_title="Δ (%)",
+        margin=dict(l=0, r=0, t=50, b=0),
+    )
+    return fig
+
+
+def fig_sensitivity_rho(df: pd.DataFrame, ticker: str) -> go.Figure:
+    """
+    Grafico tipo 'Pricing Sensitivity to rho' (come immagine tesi).
+    Usa colonne se presenti:
+      - Market_Price, BS_Price
+      - Rab_Price (baseline)
+      - Rab_Price_rho_-1  / Rab_Price_rho_+1  (o varianti)
+    Se non trova le colonne rho estremi, mostra solo Market/BS/Rab.
+    """
+    fig = go.Figure()
+    df = _std_ticker(df)
+    if df is None or df.empty:
+        fig.update_layout(title=f"Pricing Sensitivity to rho – {ticker} (nessun dato)")
+        return fig
+
+    d = df.copy()
+    d["Date_dt"] = _to_datetime_safe(d.get("Date"), dayfirst=False)
+    d = d.sort_values("Date_dt")
+
+    d["Market_Price"] = _numeric(d.get("Market_Price"))
+    d["BS_Price"] = _numeric(d.get("BS_Price"))
+    d["Rab_Price"] = _numeric(d.get("Rab_Price"))
+
+    # prova a riconoscere colonne rho estreme (molto tollerante)
+    cols = {c.lower(): c for c in d.columns}
+    rho_minus = None
+    rho_plus = None
+
+    # pattern comuni
+    cand_minus = [
+        "rab_price_rho_-1", "rab_price_rho_-1.0", "rab_price_rho_-1_0", "rab_price_rho_m1",
+        "rab_price_rho=-1", "rab_price_rho_-100"
+    ]
+    cand_plus = [
+        "rab_price_rho_+1", "rab_price_rho_+1.0", "rab_price_rho_1", "rab_price_rho_p1",
+        "rab_price_rho=+1", "rab_price_rho_100"
+    ]
+
+    for key in cand_minus:
+        if key in cols:
+            rho_minus = cols[key]
+            break
+    for key in cand_plus:
+        if key in cols:
+            rho_plus = cols[key]
+            break
+
+    # se non trovate, prova ricerca fuzzy
+    if rho_minus is None:
+        for c in d.columns:
+            lc = str(c).lower().replace(" ", "")
+            if "rho" in lc and ("-1" in lc or "m1" in lc) and "rab" in lc:
+                rho_minus = c
+                break
+    if rho_plus is None:
+        for c in d.columns:
+            lc = str(c).lower().replace(" ", "")
+            if "rho" in lc and ("+1" in lc or "p1" in lc) and "rab" in lc:
+                rho_plus = c
+                break
+
+    # tracce
+    fig.add_trace(go.Scatter(
+        x=d["Date_dt"], y=d["Market_Price"],
+        mode="lines", name="Market Price",
+        line=dict(dash="dash")
+    ))
+    fig.add_trace(go.Scatter(
+        x=d["Date_dt"], y=d["BS_Price"],
+        mode="lines", name="Black–Scholes"
+    ))
+    fig.add_trace(go.Scatter(
+        x=d["Date_dt"], y=d["Rab_Price"],
+        mode="lines", name="Rabinovitch (rho est.)"
+    ))
+
+    if rho_minus is not None:
+        fig.add_trace(go.Scatter(
+            x=d["Date_dt"], y=_numeric(d[rho_minus]),
+            mode="lines", name=f"Rabinovitch (rho = -1)"
+        ))
+    if rho_plus is not None:
+        fig.add_trace(go.Scatter(
+            x=d["Date_dt"], y=_numeric(d[rho_plus]),
+            mode="lines", name=f"Rabinovitch (rho = +1)"
+        ))
+
+    fig.update_layout(
+        title=f"{ticker} – Pricing Sensitivity to rho",
+        xaxis_title="Date",
+        yaxis_title="Option Price",
         margin=dict(l=0, r=0, t=50, b=0),
     )
     return fig
@@ -230,88 +374,6 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
         barmode="overlay",
         xaxis_title="Model - Market",
         yaxis_title="Count",
-        margin=dict(l=0, r=0, t=50, b=0),
-    )
-    return fig
-
-
-def fig_mispricing_rab_vs_bs(df: pd.DataFrame, ticker: str) -> go.Figure:
-    """
-    Mispricing: (Model - Market) per BS e Rab, confrontati nello stesso grafico.
-    """
-    fig = go.Figure()
-    df = _std_ticker(df)
-
-    if df is None or df.empty:
-        fig.update_layout(title=f"Mispricing Rab vs BS – {ticker} (nessun dato)")
-        return fig
-
-    d = df.copy()
-    d["Market_Price"] = _numeric(d.get("Market_Price"))
-    d["BS_Price"] = _numeric(d.get("BS_Price"))
-    d["Rab_Price"] = _numeric(d.get("Rab_Price"))
-
-    d = d.dropna(subset=["Market_Price", "BS_Price", "Rab_Price"])
-    if d.empty:
-        fig.update_layout(title=f"Mispricing Rab vs BS – {ticker} (nessun dato)")
-        return fig
-
-    d["Mispricing_BS"] = d["BS_Price"] - d["Market_Price"]
-    d["Mispricing_Rab"] = d["Rab_Price"] - d["Market_Price"]
-
-    fig.add_trace(go.Scatter(
-        x=d["Market_Price"],
-        y=d["Mispricing_BS"],
-        mode="markers",
-        name="BS − Market",
-        hovertemplate="Market=%{x:.4f}<br>BS-Mkt=%{y:.4f}<extra></extra>",
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=d["Market_Price"],
-        y=d["Mispricing_Rab"],
-        mode="markers",
-        name="Rabinovitch − Market",
-        hovertemplate="Market=%{x:.4f}<br>Rab-Mkt=%{y:.4f}<extra></extra>",
-    ))
-
-    fig.add_hline(y=0, line_dash="dash")
-
-    fig.update_layout(
-        title=f"Mispricing vs Market Price – {ticker}",
-        xaxis_title="Market Price",
-        yaxis_title="Model − Market",
-        margin=dict(l=0, r=0, t=50, b=0),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
-    )
-    return fig
-
-
-def fig_sens_diff_pct(df: pd.DataFrame, ticker: str) -> go.Figure:
-    """
-    Grafico sensitivities: (Rab - BS)% vs days
-    (NO grafici sulle greche)
-    """
-    fig = go.Figure()
-    df = _std_ticker(df)
-    if df is None or df.empty:
-        fig.update_layout(title=f"Sensitivities (Rab-BS)% – {ticker} (nessun dato)")
-        return fig
-
-    d = df.copy()
-    d["days"] = _numeric(d.get("days"))
-    d["Rab_minus_BS_pct"] = _numeric(d.get("Rab_minus_BS_pct"))
-    d = d.dropna(subset=["days", "Rab_minus_BS_pct"]).sort_values("days")
-
-    if d.empty:
-        fig.update_layout(title=f"Sensitivities (Rab-BS)% – {ticker} (nessun dato)")
-        return fig
-
-    fig.add_trace(go.Scatter(x=d["days"], y=d["Rab_minus_BS_pct"], mode="lines+markers", name="(Rab-BS)%"))
-    fig.update_layout(
-        title=f"Sensitivities: (Rabinovitch - BS)% vs days – {ticker}",
-        xaxis_title="days",
-        yaxis_title="%",
         margin=dict(l=0, r=0, t=50, b=0),
     )
     return fig
@@ -446,21 +508,22 @@ if ticker == "(nessun ticker)":
 
 
 # ==========================================================
-# RENDER
+# RENDER (TUTTO UNO SOTTO L'ALTRO)
 # ==========================================================
 if section == "Option pricing":
     df_opt = by_ticker(data["opt"], ticker)
-    df_sens = by_ticker(data["sens"], ticker)
 
+    # 1) Market vs BS vs Rab (time series)
     st.plotly_chart(fig_opt_timeseries(df_opt, ticker), use_container_width=True)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.plotly_chart(fig_opt_error_hist(df_opt, ticker), use_container_width=True)
-    with c2:
-        st.plotly_chart(fig_mispricing_rab_vs_bs(df_opt, ticker), use_container_width=True)
+    # 2) Mispricing % nel tempo (come immagine)
+    st.plotly_chart(fig_mispricing_pct_timeseries(df_opt, ticker), use_container_width=True)
 
-    st.plotly_chart(fig_sens_diff_pct(df_sens, ticker), use_container_width=True)
+    # 3) Sensitivity to rho (usa opt se hai le colonne rho lì)
+    st.plotly_chart(fig_sensitivity_rho(df_opt, ticker), use_container_width=True)
+
+    # 4) Error distribution (istogramma)
+    st.plotly_chart(fig_opt_error_hist(df_opt, ticker), use_container_width=True)
 
 elif section == "IV":
     df_surf = by_ticker(data["iv"], ticker)
@@ -486,5 +549,6 @@ elif section == "Crash Prob":
 
 st.caption(
     "Se RND/MND dice '(nessun dato)': verifica che /data/rnd_mnd_density_all.csv contenga quel ticker "
-    "e le colonne: ticker, Measure, Modello, DeltaT, Moneyness, Density (e Strike/K per il grafico su strike)."
+    "e le colonne: ticker, Measure, Modello, DeltaT, Moneyness, Density (e Strike/K per il grafico su strike). "
+    "Se il grafico 'rho' è vuoto: nel CSV option_pricing_all.csv devono esistere colonne Rab_Price_rho_-1 / Rab_Price_rho_+1 (o simili)."
 )
