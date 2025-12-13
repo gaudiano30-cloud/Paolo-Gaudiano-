@@ -73,13 +73,12 @@ def _parse_deltaT_to_years(deltaT: pd.Series) -> pd.Series:
 def _normalize_density_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     Normalizza le colonne del CSV densità a questi nomi standard:
-    ticker, date, DeltaT, Modello, Measure, Moneyness, Density, Strike (opzionale)
+    ticker, date, DeltaT, Modello, Measure, Moneyness, Density
     """
     if df is None or df.empty:
         return df
     df = _clean_columns(df).copy()
 
-    # mappa case-insensitive
     cmap = {str(c).strip().lower().replace(" ", ""): c for c in df.columns}
 
     def pick(*cands):
@@ -119,11 +118,6 @@ def _normalize_density_columns(df: pd.DataFrame) -> pd.DataFrame:
     if c_den and c_den != "Density":
         ren[c_den] = "Density"
 
-    # strike opzionale
-    c_strike = pick("strike", "Strike", "k", "K")
-    if c_strike and c_strike != "Strike":
-        ren[c_strike] = "Strike"
-
     if ren:
         df = df.rename(columns=ren)
 
@@ -153,7 +147,6 @@ def load_all_data():
         df = _clean_columns(df)
         df = _std_ticker(df)
 
-        # >>> FIX: normalizza densità
         if k == "dens":
             df = _normalize_density_columns(df)
 
@@ -395,11 +388,7 @@ def fig_sensitivity_rho(df: pd.DataFrame, ticker: str) -> go.Figure:
                 rho_plus = c
                 break
 
-    fig.add_trace(go.Scatter(
-        x=d["Date_dt"], y=d["Market_Price"],
-        mode="lines", name="Market Price",
-        line=dict(dash="dash")
-    ))
+    fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["Market_Price"], mode="lines", name="Market Price", line=dict(dash="dash")))
     fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["BS_Price"], mode="lines", name="Black–Scholes"))
     fig.add_trace(go.Scatter(x=d["Date_dt"], y=d["Rab_Price"], mode="lines", name="Rabinovitch (rho est.)"))
 
@@ -438,95 +427,97 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
         yaxis_title="Count",
         margin=dict(l=0, r=0, t=50, b=0),
     )
-    return fig  # <<< FIX
+    return fig
 
 
 # ==========================================================
-# CHARTS – RND / MND DENSITIES (FIXED)
+# CHARTS – RND / MND DENSITIES (ONLY MONEyness, ALL DATES, BS/RAB/BOTH)
 # ==========================================================
 def _normalize_model(s: str) -> str:
     return str(s).strip().lower()
 
 
-def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: str, model_choice: str) -> go.Figure:
+def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, model_choice: str) -> go.Figure:
+    """
+    Mostra SOLO Moneyness.
+    Mostra TUTTE le date sovrapposte.
+    model_choice: "Rabinovitch" / "BS" / "Entrambi"
+    """
     fig = go.Figure()
-    df_dens = _normalize_density_columns(df_dens)  # safety
+    df_dens = _normalize_density_columns(df_dens)
     d = by_ticker(df_dens, ticker)
 
     if d is None or d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
+        fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
         return fig
 
     # filtra misura
     d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
     d = d[d["Measure"] == str(measure).upper().strip()]
     if d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
+        fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
         return fig
 
-    # parse date (NON obbligatoria)
+    # numerici
+    d["Moneyness"] = _numeric(d["Moneyness"])
+    d["Density"] = _numeric(d["Density"])
+    d = d.dropna(subset=["Moneyness", "Density"])
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) (nessun dato)")
+        return fig
+
+    # date (non obbligatoria, ma serve per distinguere in legenda)
     if "date" in d.columns:
         dt = pd.to_datetime(d["date"], errors="coerce", dayfirst=False)
         dt2 = pd.to_datetime(d["date"], errors="coerce", dayfirst=True)
         d["_date_dt"] = dt
         d.loc[d["_date_dt"].isna(), "_date_dt"] = dt2[d["_date_dt"].isna()]
-        # se riesco prendo ultima data, altrimenti tengo tutto
-        if d["_date_dt"].notna().any():
-            last = d["_date_dt"].max()
-            d = d[d["_date_dt"] == last].copy()
     else:
         d["_date_dt"] = pd.NaT
 
-    # filtro modello
+    # modello filter
     d["Modello_norm"] = d["Modello"].map(_normalize_model)
     choice = str(model_choice).strip().lower()
-    if choice == "bs":
-        d = d[d["Modello_norm"].str.contains("bs") | (d["Modello_norm"].str.contains("black") & d["Modello_norm"].str.contains("scholes"))]
-        title_model = "BS"
-    else:
-        d = d[d["Modello_norm"].str.contains("rab") | d["Modello_norm"].str.contains("rabin")]
-        title_model = "Rabinovitch"
 
+    def keep_row(model_norm: str) -> bool:
+        if choice == "entrambi":
+            return True
+        if choice == "bs":
+            return ("bs" in model_norm) or ("black" in model_norm and "scholes" in model_norm)
+        # rabinovitch
+        return ("rab" in model_norm) or ("rabin" in model_norm)
+
+    d = d[d["Modello_norm"].map(keep_row)]
     if d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) – {title_model} (nessun dato)")
-        return fig
-
-    # numerici
-    d["Density"] = _numeric(d["Density"])
-
-    if xmode.lower().startswith("m"):
-        xcol = "Moneyness"
-        d["Moneyness"] = _numeric(d["Moneyness"])
-    else:
-        # strike solo se presente
-        if "Strike" not in d.columns:
-            fig.update_layout(title=f"{ticker} – {measure} Density (Strike) – {title_model} (manca Strike/K nel CSV densità)")
-            return fig
-        xcol = "Strike"
-        d["Strike"] = _numeric(d["Strike"])
-
-    d = d.dropna(subset=[xcol, "Density"])
-    if d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) – {title_model} (nessun dato)")
+        fig.update_layout(title=f"{ticker} – {measure} Density (Moneyness) ({model_choice}) (nessun dato)")
         return fig
 
     # ordine tenori
     d["_T"] = _parse_deltaT_to_years(d["DeltaT"]).fillna(999.0)
 
-    for tenor, g in d.sort_values(["_T", xcol]).groupby("DeltaT", dropna=False):
-        g = g.sort_values(xcol)
-        fig.add_trace(go.Scatter(x=g[xcol], y=g["Density"], mode="lines", name=str(tenor)))
-
-    # titolo con data se disponibile
-    if "_date_dt" in d.columns and pd.notna(d["_date_dt"]).any():
-        dt_show = pd.to_datetime(d["_date_dt"].dropna().iloc[0]).date()
-        title_date = f" – {dt_show}"
+    # label date per legenda
+    if d["_date_dt"].notna().any():
+        d["_date_lbl"] = d["_date_dt"].dt.date.astype(str)
+    elif "date" in d.columns:
+        d["_date_lbl"] = d["date"].astype(str)
     else:
-        title_date = ""
+        d["_date_lbl"] = ""
+
+    # gruppa per (Modello, DeltaT, date) così vedi tutte sovrapposte
+    group_cols = ["Modello", "DeltaT", "_date_lbl"]
+    for (model, tenor, dtlbl), g in d.sort_values(["_T", "Moneyness"]).groupby(group_cols, dropna=False):
+        g = g.sort_values("Moneyness")
+        name = f"{tenor} | {dtlbl} | {model}"
+        fig.add_trace(go.Scatter(
+            x=g["Moneyness"],
+            y=g["Density"],
+            mode="lines",
+            name=name
+        ))
 
     fig.update_layout(
-        title=f"{ticker} – {measure} Density ({xmode}) – {title_model}{title_date}",
-        xaxis_title="Moneyness (K/S)" if xcol == "Moneyness" else "Strike (K)",
+        title=f"{ticker} – {measure} Density (Moneyness) – {model_choice}",
+        xaxis_title="Moneyness (K/S)",
         yaxis_title="Densità",
         margin=dict(l=0, r=0, t=50, b=0),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
@@ -549,12 +540,10 @@ with st.sidebar:
     section = st.radio("Sezione", SECTIONS, index=0)
 
     model_choice = "Rabinovitch"
-    xmode = "Moneyness"
     if section in ["RND", "MND"]:
         st.divider()
         st.subheader("RND/MND options")
-        model_choice = st.radio("Modello", ["Rabinovitch", "BS"], index=0, horizontal=True)
-        xmode = st.radio("Asse X", ["Moneyness", "Strike"], index=0, horizontal=True)
+        model_choice = st.radio("Modello", ["Rabinovitch", "BS", "Entrambi"], index=0, horizontal=True)
 
     st.divider()
     st.caption(f"Data directory: {DATA_DIR}")
@@ -584,22 +573,17 @@ elif section == "IV":
 elif section == "RND":
     df_dens = data.get("dens", pd.DataFrame())
     st.plotly_chart(
-        fig_density_curve(df_dens, ticker, measure="RND", xmode=xmode, model_choice=model_choice),
+        fig_density_curve(df_dens, ticker, measure="RND", model_choice=model_choice),
         use_container_width=True
     )
 
 elif section == "MND":
     df_dens = data.get("dens", pd.DataFrame())
     st.plotly_chart(
-        fig_density_curve(df_dens, ticker, measure="MND", xmode=xmode, model_choice=model_choice),
+        fig_density_curve(df_dens, ticker, measure="MND", model_choice=model_choice),
         use_container_width=True
     )
 
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
-
-st.caption(
-    "RND/MND: il CSV densità deve avere: ticker, date, DeltaT, Modello, Measure, Moneyness, Density "
-    "(e Strike/K se vuoi il grafico su Strike)."
-)
