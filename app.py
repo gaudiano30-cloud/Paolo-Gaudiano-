@@ -686,7 +686,7 @@ elif section == "RND":
     # >>> AGGIUNTA TABELLA RND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "RND")
     if tbl is not None and not tbl.empty:
-        st.subheader("Strike più probabile (RND) – tabella")
+        st.subheader("Strike più probabile (RND)")
         st.dataframe(tbl, use_container_width=True, hide_index=True)
     # <<<
 
@@ -700,10 +700,11 @@ elif section == "MND":
     # >>> AGGIUNTA TABELLA MND (strike più probabile)
     tbl = _mode_table_from_pdf(ticker, "MND")
     if tbl is not None and not tbl.empty:
-        st.subheader("Strike più probabile (MND) – tabella")
+        st.subheader("Strike più probabile (MND)")
         st.dataframe(tbl, use_container_width=True, hide_index=True)
     # <<<
 
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
+
