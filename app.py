@@ -481,7 +481,7 @@ def fig_sens_shares(df: pd.DataFrame, ticker: str) -> go.Figure:
 # STREAMLIT UI
 # ==========================================================
 st.set_page_config(page_title="Thesis Dashboard", layout="wide")
-st.title("Dashboard Tesi – IV, RND/MND, Crash, Pricing, Sensitivities")
+st.title("Paolo Gaudiano - Dal piricng teorico alla realtà di mercato")
 
 data = load_all_data()
 tickers = available_tickers(data)
@@ -536,3 +536,4 @@ elif tab == "Sensitivities":
 
 st.divider()
 st.caption("Se qualche grafico è vuoto: controlla i nomi delle colonne nei CSV (Date/Expiry/Data ecc.).")
+
