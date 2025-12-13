@@ -394,46 +394,68 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
 # ==========================================================
 # CHARTS – RND / MND DENSITIES (BELL CURVES: moneyness + strike)
 # ==========================================================
+# >>>>>> MODIFICATO SOLO QUI (prep + plot) <<<<<<
+
 def _prep_density(df_dens: pd.DataFrame, ticker: str, measure: str) -> pd.DataFrame:
     """
-    Atteso (dal tuo export): ticker, Measure, Modello, DeltaT, Moneyness, Density
-    + (opzionale) Strike/K per il grafico su strike.
+    Robust per il tuo merge:
+    colonne attese: ticker, date, DeltaT, Modello, Measure, Moneyness, Density
+    (Strike/K opzionale)
     """
     df_dens = _std_ticker(df_dens)
     if df_dens is None or df_dens.empty:
         return pd.DataFrame()
 
-    d = by_ticker(df_dens, ticker)
+    d = df_dens.copy()
 
-    if "Measure" not in d.columns:
+    # normalizza ticker
+    if "ticker" not in d.columns:
+        return pd.DataFrame()
+    d["ticker"] = d["ticker"].astype(str).str.upper().str.strip()
+    t = str(ticker).upper().strip()
+    d = d[d["ticker"] == t]
+    if d.empty:
         return pd.DataFrame()
 
+    # normalizza Measure
+    if "Measure" not in d.columns:
+        return pd.DataFrame()
     d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
-    d = d[d["Measure"] == str(measure).upper()]
+    d = d[d["Measure"] == str(measure).upper().strip()]
+    if d.empty:
+        return pd.DataFrame()
 
-    # normalizza colonne possibili strike
+    # normalizza Modello/DeltaT
+    if "Modello" in d.columns:
+        d["Modello"] = d["Modello"].astype(str).str.strip()
+    else:
+        d["Modello"] = ""
+
+    if "DeltaT" in d.columns:
+        d["DeltaT"] = d["DeltaT"].astype(str).str.upper().str.strip()
+    else:
+        d["DeltaT"] = ""
+
+    # normalizza strike
     if "Strike" not in d.columns and "K" in d.columns:
         d = d.rename(columns={"K": "Strike"})
 
-    # numerici
+    # forzo numerici
     if "Moneyness" in d.columns:
-        d["Moneyness"] = _numeric(d["Moneyness"])
-    if "Strike" in d.columns:
-        d["Strike"] = _numeric(d["Strike"])
+        d["Moneyness"] = pd.to_numeric(d["Moneyness"], errors="coerce")
     if "Density" in d.columns:
-        d["Density"] = _numeric(d["Density"])
-
-    # pulizia
-    d["Modello"] = d.get("Modello", "").astype(str).str.strip()
-    d["DeltaT"] = d.get("DeltaT", "").astype(str).str.strip()
+        d["Density"] = pd.to_numeric(d["Density"], errors="coerce")
+    if "Strike" in d.columns:
+        d["Strike"] = pd.to_numeric(d["Strike"], errors="coerce")
 
     return d
 
 
 def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: str, model_choice: str) -> go.Figure:
     """
-    xmode: "Moneyness" oppure "Strike"
-    model_choice: "Rabinovitch" oppure "BS"
+    Fix:
+    - Modello nel CSV è 'BS' oppure 'Rabinovitch' (o 'Rab'): filtro robusto
+    - DeltaT può essere '1.43Y': ordino per anni usando _parse_deltaT_to_years (non solo 1M/3M/6M/1Y)
     """
     fig = go.Figure()
     d = _prep_density(df_dens, ticker, measure)
@@ -442,22 +464,22 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: s
         fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
         return fig
 
-    # filtra modello
+    # filtro modello robusto
     m = str(model_choice).strip().lower()
-    d["_m"] = d["Modello"].astype(str).str.lower()
+    d["_m"] = d["Modello"].astype(str).str.lower().str.strip()
     if m == "bs":
         d = d[d["_m"].str.contains("bs")]
     else:
         d = d[d["_m"].str.contains("rab") | d["_m"].str.contains("rabin")]
 
-    # controlla asse x
+    if d.empty:
+        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) ({model_choice}: nessun dato)")
+        return fig
+
+    # asse X
     xcol = "Moneyness" if xmode.lower().startswith("m") else "Strike"
     if xcol not in d.columns:
         fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (colonna {xcol} mancante nel CSV)")
-        return fig
-
-    if "Density" not in d.columns:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (colonna Density mancante)")
         return fig
 
     d = d.dropna(subset=[xcol, "Density"])
@@ -465,10 +487,12 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: s
         fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
         return fig
 
-    tenor_order = {"1M": 1, "3M": 2, "6M": 3, "1Y": 4}
-    d["_ten"] = d["DeltaT"].astype(str).str.upper().map(lambda x: tenor_order.get(x, 99))
+    # ordino tenori anche se sono 1.43Y, 0.5Y ecc.
+    d["_T"] = _parse_deltaT_to_years(d["DeltaT"])
+    d["_T"] = d["_T"].fillna(999.0)
 
-    for tenor, g in d.sort_values(["_ten", xcol]).groupby("DeltaT", dropna=False):
+    # plot: una curva per ogni DeltaT
+    for tenor, g in d.sort_values(["_T", xcol]).groupby("DeltaT", dropna=False):
         g = g.sort_values(xcol)
         fig.add_trace(go.Scatter(
             x=g[xcol],
