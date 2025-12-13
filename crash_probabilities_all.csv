@@ -1,0 +1,25 @@
+ticker,Data,Modello,DeltaT,Forward implicito F,Soglia crash (θ = % di F),P_crash_Q (RND),P_crash_P (MND),Date_obj,source_file
+AAPL,23/01/2024,Rabinovitch,1Y,196.1286022,0.8,0.226518812,0.110013316,1/23/2024,AAPL_crash_probabilities.csv
+AAPL,23/01/2024,Black–Scholes,1Y,196.1286022,0.8,0.16708715,0.073625533,1/23/2024,AAPL_crash_probabilities.csv
+AAPL,19/07/2024,Rabinovitch,6M,225.44554,0.8,0.193533135,0.099013755,7/19/2024,AAPL_crash_probabilities.csv
+AAPL,19/07/2024,Black–Scholes,6M,225.44554,0.8,0.155536102,0.075462279,7/19/2024,AAPL_crash_probabilities.csv
+AAPL,18/10/2024,Rabinovitch,3M,235.3554223,0.8,0.063219682,0.033682724,10/18/2024,AAPL_crash_probabilities.csv
+AAPL,18/10/2024,Black–Scholes,3M,235.3554223,0.8,0.051832583,0.026908332,10/18/2024,AAPL_crash_probabilities.csv
+AAPL,18/12/2024,Rabinovitch,1M,248.164432,0.8,0.01108421,0.005730747,12/18/2024,AAPL_crash_probabilities.csv
+AAPL,18/12/2024,Black–Scholes,1M,248.164432,0.8,0.00957407,0.004888251,12/18/2024,AAPL_crash_probabilities.csv
+ISP,25/06/2024,Rabinovitch,1Y,3.259375609,0.8,0.196490441,0.098040842,6/25/2024,ISP_crash_probabilities.csv
+ISP,25/06/2024,Black–Scholes,1Y,3.259375609,0.8,0.161430976,0.075915482,6/25/2024,ISP_crash_probabilities.csv
+ISP,20/12/2024,Rabinovitch,6M,3.673507014,0.8,0.132503777,0.053307715,12/20/2024,ISP_crash_probabilities.csv
+ISP,20/12/2024,Black–Scholes,6M,3.673507014,0.8,0.120955751,0.046914585,12/20/2024,ISP_crash_probabilities.csv
+ISP,21/03/2025,Rabinovitch,3M,4.745695571,0.8,0.12224601,0.065321173,3/21/2025,ISP_crash_probabilities.csv
+ISP,21/03/2025,Black–Scholes,3M,4.745695571,0.8,0.115233047,0.060681491,3/21/2025,ISP_crash_probabilities.csv
+ISP,21/05/2025,Rabinovitch,1M,4.922609352,0.8,0.080920542,0.044579315,5/21/2025,ISP_crash_probabilities.csv
+ISP,21/05/2025,Black–Scholes,1M,4.922609352,0.8,0.079023323,0.043352067,5/21/2025,ISP_crash_probabilities.csv
+NVDA,23/01/2024,Rabinovitch,1Y,62.1283615,0.8,0.379746691,0.19102256,1/23/2024,NVDA_crash_probabilities.csv
+NVDA,23/01/2024,Black–Scholes,1Y,62.1283615,0.8,0.34474341,0.166993879,1/23/2024,NVDA_crash_probabilities.csv
+NVDA,19/07/2024,Rabinovitch,6M,119.4447785,0.8,0.376313544,0.191652606,7/19/2024,NVDA_crash_probabilities.csv
+NVDA,19/07/2024,Black–Scholes,6M,119.4447785,0.8,0.355455694,0.177157221,7/19/2024,NVDA_crash_probabilities.csv
+NVDA,18/10/2024,Rabinovitch,3M,138.8866362,0.8,0.252082705,0.125992048,10/18/2024,NVDA_crash_probabilities.csv
+NVDA,18/10/2024,Black–Scholes,3M,138.8866362,0.8,0.238609131,0.117392264,10/18/2024,NVDA_crash_probabilities.csv
+NVDA,18/12/2024,Rabinovitch,1M,129.11249,0.8,0.096425772,0.050138781,12/18/2024,NVDA_crash_probabilities.csv
+NVDA,18/12/2024,Black–Scholes,1M,129.11249,0.8,0.092118593,0.047539094,12/18/2024,NVDA_crash_probabilities.csv
