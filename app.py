@@ -588,6 +588,3 @@ elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
 
-st.caption(
-    "RND/MND: il CSV densità deve avere: ticker, date, DeltaT, Modello, Measure, Moneyness, Density."
-)
