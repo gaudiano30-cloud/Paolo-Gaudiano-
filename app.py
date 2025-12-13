@@ -181,7 +181,7 @@ def fig_crash(df: pd.DataFrame, ticker: str) -> go.Figure:
 
 
 # ==========================================================
-# CHARTS – OPTION PRICING (ONLY core + sensitivity %)
+# CHARTS – OPTION PRICING (core + mispricing + sensitivity %)
 # ==========================================================
 def fig_opt_timeseries(df: pd.DataFrame, ticker: str) -> go.Figure:
     fig = go.Figure()
@@ -235,10 +235,62 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
     return fig
 
 
+def fig_mispricing_rab_vs_bs(df: pd.DataFrame, ticker: str) -> go.Figure:
+    """
+    Mispricing: (Model - Market) per BS e Rab, confrontati nello stesso grafico.
+    """
+    fig = go.Figure()
+    df = _std_ticker(df)
+
+    if df is None or df.empty:
+        fig.update_layout(title=f"Mispricing Rab vs BS – {ticker} (nessun dato)")
+        return fig
+
+    d = df.copy()
+    d["Market_Price"] = _numeric(d.get("Market_Price"))
+    d["BS_Price"] = _numeric(d.get("BS_Price"))
+    d["Rab_Price"] = _numeric(d.get("Rab_Price"))
+
+    d = d.dropna(subset=["Market_Price", "BS_Price", "Rab_Price"])
+    if d.empty:
+        fig.update_layout(title=f"Mispricing Rab vs BS – {ticker} (nessun dato)")
+        return fig
+
+    d["Mispricing_BS"] = d["BS_Price"] - d["Market_Price"]
+    d["Mispricing_Rab"] = d["Rab_Price"] - d["Market_Price"]
+
+    fig.add_trace(go.Scatter(
+        x=d["Market_Price"],
+        y=d["Mispricing_BS"],
+        mode="markers",
+        name="BS − Market",
+        hovertemplate="Market=%{x:.4f}<br>BS-Mkt=%{y:.4f}<extra></extra>",
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=d["Market_Price"],
+        y=d["Mispricing_Rab"],
+        mode="markers",
+        name="Rabinovitch − Market",
+        hovertemplate="Market=%{x:.4f}<br>Rab-Mkt=%{y:.4f}<extra></extra>",
+    ))
+
+    fig.add_hline(y=0, line_dash="dash")
+
+    fig.update_layout(
+        title=f"Mispricing vs Market Price – {ticker}",
+        xaxis_title="Market Price",
+        yaxis_title="Model − Market",
+        margin=dict(l=0, r=0, t=50, b=0),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
+    )
+    return fig
+
+
 def fig_sens_diff_pct(df: pd.DataFrame, ticker: str) -> go.Figure:
     """
-    Mettiamo QUI (Option pricing) il tuo grafico sensitivities: (Rab - BS)% vs days
-    (come richiesto) e NON facciamo grafici sulle greche.
+    Grafico sensitivities: (Rab - BS)% vs days
+    (NO grafici sulle greche)
     """
     fig = go.Figure()
     df = _std_ticker(df)
@@ -317,7 +369,6 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: s
         return fig
 
     # filtra modello
-    # nel CSV 'Modello' può essere "BS" / "Rabinovitch" (o varianti). Normalizziamo.
     m = str(model_choice).strip().lower()
     d["_m"] = d["Modello"].astype(str).str.lower()
     if m == "bs":
@@ -340,8 +391,6 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: s
         fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
         return fig
 
-    # stile: come tesi -> molte curve per tenori, linee continue (campane)
-    # RND vs MND li separi per sezione, quindi qui non serve tratteggio.
     tenor_order = {"1M": 1, "3M": 2, "6M": 3, "1Y": 4}
     d["_ten"] = d["DeltaT"].astype(str).str.upper().map(lambda x: tenor_order.get(x, 99))
 
@@ -404,7 +453,13 @@ if section == "Option pricing":
     df_sens = by_ticker(data["sens"], ticker)
 
     st.plotly_chart(fig_opt_timeseries(df_opt, ticker), use_container_width=True)
-    st.plotly_chart(fig_opt_error_hist(df_opt, ticker), use_container_width=True)
+
+    c1, c2 = st.columns(2)
+    with c1:
+        st.plotly_chart(fig_opt_error_hist(df_opt, ticker), use_container_width=True)
+    with c2:
+        st.plotly_chart(fig_mispricing_rab_vs_bs(df_opt, ticker), use_container_width=True)
+
     st.plotly_chart(fig_sens_diff_pct(df_sens, ticker), use_container_width=True)
 
 elif section == "IV":
@@ -413,13 +468,17 @@ elif section == "IV":
 
 elif section == "RND":
     df_dens = data.get("dens", pd.DataFrame())
-    st.plotly_chart(fig_density_curve(df_dens, ticker, measure="RND", xmode=xmode, model_choice=model_choice),
-                    use_container_width=True)
+    st.plotly_chart(
+        fig_density_curve(df_dens, ticker, measure="RND", xmode=xmode, model_choice=model_choice),
+        use_container_width=True
+    )
 
 elif section == "MND":
     df_dens = data.get("dens", pd.DataFrame())
-    st.plotly_chart(fig_density_curve(df_dens, ticker, measure="MND", xmode=xmode, model_choice=model_choice),
-                    use_container_width=True)
+    st.plotly_chart(
+        fig_density_curve(df_dens, ticker, measure="MND", xmode=xmode, model_choice=model_choice),
+        use_container_width=True
+    )
 
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
