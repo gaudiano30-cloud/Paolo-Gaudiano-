@@ -388,111 +388,228 @@ def fig_opt_error_hist(df: pd.DataFrame, ticker: str) -> go.Figure:
         yaxis_title="Count",
         margin=dict(l=0, r=0, t=50, b=0),
     )
-    return fig
+    return fig_opt_error_hist
 
 
 # ==========================================================
 # CHARTS – RND / MND DENSITIES (BELL CURVES: moneyness + strike)
+#   >>> MODIFICATO SOLO QUI per supportare il tuo CSV merged
 # ==========================================================
-# >>>>>> MODIFICATO SOLO QUI (prep + plot) <<<<<<
 
-def _prep_density(df_dens: pd.DataFrame, ticker: str, measure: str) -> pd.DataFrame:
+def _colmap_case_insensitive(df: pd.DataFrame) -> dict:
+    """mappa lower(col)->col originale"""
+    return {str(c).strip().lower(): c for c in (df.columns if df is not None else [])}
+
+
+def _get_col(df: pd.DataFrame, *candidates: str):
+    """ritorna la prima colonna presente (case-insensitive) tra candidates"""
+    cmap = _colmap_case_insensitive(df)
+    for c in candidates:
+        key = str(c).strip().lower()
+        if key in cmap:
+            return cmap[key]
+    return None
+
+
+def _normalize_model_name(x: str) -> str:
+    s = str(x).strip().lower()
+    s = s.replace("–", "-").replace("—", "-")
+    return s
+
+
+def _is_bs(model_str: str) -> bool:
+    s = _normalize_model_name(model_str)
+    return ("bs" in s) or ("black" in s and "scholes" in s)
+
+
+def _is_rab(model_str: str) -> bool:
+    s = _normalize_model_name(model_str)
+    return ("rab" in s) or ("rabin" in s)
+
+
+def _pick_latest_date(d: pd.DataFrame) -> pd.DataFrame:
+    """Se c'è una colonna date, prende l'ultima data disponibile (come nei grafici tesi)."""
+    if d is None or d.empty:
+        return d
+    c_date = _get_col(d, "date", "Date", "Data")
+    if c_date is None:
+        return d
+    dd = d.copy()
+    # prova sia dayfirst True che False perché nel tuo file può essere 1/23/2024
+    dt = pd.to_datetime(dd[c_date], errors="coerce", dayfirst=False)
+    dt2 = pd.to_datetime(dd[c_date], errors="coerce", dayfirst=True)
+    dd["_date_dt"] = dt
+    dd.loc[dd["_date_dt"].isna(), "_date_dt"] = dt2[dd["_date_dt"].isna()]
+    dd = dd.dropna(subset=["_date_dt"])
+    if dd.empty:
+        return d
+    last = dd["_date_dt"].max()
+    return dd[dd["_date_dt"] == last].copy()
+
+
+def _spot_series_from_opt(df_opt: pd.DataFrame, ticker: str):
     """
-    Robust per il tuo merge:
-    colonne attese: ticker, date, DeltaT, Modello, Measure, Moneyness, Density
-    (Strike/K opzionale)
+    Ritorna una Series indicizzata per data con lo spot/underlying per ricostruire Strike = Moneyness * S.
+    Cerca colonne comuni in option_pricing_all.csv.
+    """
+    if df_opt is None or df_opt.empty:
+        return None
+
+    d = by_ticker(_std_ticker(df_opt), ticker)
+    if d is None or d.empty:
+        return None
+
+    c_date = _get_col(d, "date", "Date", "Data")
+    if c_date is None:
+        return None
+
+    # candidati spot (in ordine)
+    c_spot = _get_col(
+        d,
+        "S", "Spot", "spot", "Underlying", "Underlying_Price", "UnderlyingPrice",
+        "Stock_Price", "StockPrice", "Price", "Underlying price"
+    )
+    if c_spot is None:
+        return None
+
+    dd = d.copy()
+    dd["_date_dt"] = pd.to_datetime(dd[c_date], errors="coerce", dayfirst=False)
+    dd2 = pd.to_datetime(dd[c_date], errors="coerce", dayfirst=True)
+    dd.loc[dd["_date_dt"].isna(), "_date_dt"] = dd2[dd["_date_dt"].isna()]
+    dd["_spot"] = _numeric(dd[c_spot])
+    dd = dd.dropna(subset=["_date_dt", "_spot"])
+    if dd.empty:
+        return None
+
+    # se ci sono duplicati sulla stessa data, prendo il primo
+    dd = dd.sort_values("_date_dt").drop_duplicates("_date_dt", keep="last")
+    s = dd.set_index("_date_dt")["_spot"]
+    return s
+
+
+def _prep_density(df_dens: pd.DataFrame, df_opt: pd.DataFrame, ticker: str, measure: str) -> pd.DataFrame:
+    """
+    Supporta file merged come il tuo:
+      ticker, date, DeltaT, Modello, Measure, Moneyness, Density
+    e ricostruisce Strike se manca (Strike = Moneyness * Spot preso da option_pricing_all.csv).
     """
     df_dens = _std_ticker(df_dens)
     if df_dens is None or df_dens.empty:
         return pd.DataFrame()
 
-    d = df_dens.copy()
-
-    # normalizza ticker
-    if "ticker" not in d.columns:
+    d = by_ticker(df_dens, ticker)
+    if d is None or d.empty:
         return pd.DataFrame()
-    d["ticker"] = d["ticker"].astype(str).str.upper().str.strip()
-    t = str(ticker).upper().strip()
-    d = d[d["ticker"] == t]
+
+    c_measure = _get_col(d, "Measure", "measure")
+    if c_measure is None:
+        return pd.DataFrame()
+
+    d = d.copy()
+    d[c_measure] = d[c_measure].astype(str).str.upper().str.strip()
+    d = d[d[c_measure] == str(measure).upper()]
     if d.empty:
         return pd.DataFrame()
 
-    # normalizza Measure
-    if "Measure" not in d.columns:
+    # normalizza colonne principali
+    c_model = _get_col(d, "Modello", "modello", "Model", "model")
+    c_deltaT = _get_col(d, "DeltaT", "deltat", "tenor", "Tenor", "T")
+    c_mny = _get_col(d, "Moneyness", "moneyness")
+    c_density = _get_col(d, "Density", "density")
+
+    if c_model is None or c_deltaT is None or c_mny is None or c_density is None:
         return pd.DataFrame()
-    d["Measure"] = d["Measure"].astype(str).str.upper().str.strip()
-    d = d[d["Measure"] == str(measure).upper().strip()]
-    if d.empty:
-        return pd.DataFrame()
 
-    # normalizza Modello/DeltaT
-    if "Modello" in d.columns:
-        d["Modello"] = d["Modello"].astype(str).str.strip()
+    d["Modello"] = d[c_model].astype(str).str.strip()
+    d["DeltaT"] = d[c_deltaT].astype(str).str.strip()
+    d["Moneyness"] = _numeric(d[c_mny])
+    d["Density"] = _numeric(d[c_density])
+
+    # date (serve per “ultima data” + ricostruzione strike)
+    c_date = _get_col(d, "date", "Date", "Data")
+    if c_date is not None:
+        d["_date_dt"] = pd.to_datetime(d[c_date], errors="coerce", dayfirst=False)
+        d2 = pd.to_datetime(d[c_date], errors="coerce", dayfirst=True)
+        d.loc[d["_date_dt"].isna(), "_date_dt"] = d2[d["_date_dt"].isna()]
     else:
-        d["Modello"] = ""
+        d["_date_dt"] = pd.NaT
 
-    if "DeltaT" in d.columns:
-        d["DeltaT"] = d["DeltaT"].astype(str).str.upper().str.strip()
+    # strike: se manca, prova a costruirlo da option_pricing (Strike = Moneyness * Spot)
+    c_strike = _get_col(d, "Strike", "strike", "K", "k")
+    if c_strike is not None:
+        d["Strike"] = _numeric(d[c_strike])
     else:
-        d["DeltaT"] = ""
+        d["Strike"] = np.nan
+        spot_series = _spot_series_from_opt(df_opt, ticker)
+        if spot_series is not None and c_date is not None:
+            # allinea spot per data
+            tmp = d.dropna(subset=["_date_dt", "Moneyness"]).copy()
+            if not tmp.empty:
+                # merge spot
+                tmp["_spot"] = tmp["_date_dt"].map(spot_series)
+                tmp.loc[tmp["_spot"].isna(), "_spot"] = np.nan
+                d.loc[tmp.index, "Strike"] = tmp["Moneyness"] * tmp["_spot"]
 
-    # normalizza strike
-    if "Strike" not in d.columns and "K" in d.columns:
-        d = d.rename(columns={"K": "Strike"})
-
-    # forzo numerici
-    if "Moneyness" in d.columns:
-        d["Moneyness"] = pd.to_numeric(d["Moneyness"], errors="coerce")
-    if "Density" in d.columns:
-        d["Density"] = pd.to_numeric(d["Density"], errors="coerce")
-    if "Strike" in d.columns:
-        d["Strike"] = pd.to_numeric(d["Strike"], errors="coerce")
-
+    # pulizia finale
+    d = d.dropna(subset=["Moneyness", "Density"])
     return d
 
 
-def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: str, model_choice: str) -> go.Figure:
+def fig_density_curve(df_dens: pd.DataFrame, df_opt: pd.DataFrame, ticker: str, measure: str, xmode: str, model_choice: str) -> go.Figure:
     """
-    Fix:
-    - Modello nel CSV è 'BS' oppure 'Rabinovitch' (o 'Rab'): filtro robusto
-    - DeltaT può essere '1.43Y': ordino per anni usando _parse_deltaT_to_years (non solo 1M/3M/6M/1Y)
+    xmode: "Moneyness" oppure "Strike"
+    model_choice: "Rabinovitch" oppure "BS"
     """
     fig = go.Figure()
-    d = _prep_density(df_dens, ticker, measure)
+    d = _prep_density(df_dens, df_opt, ticker, measure)
 
     if d.empty:
         fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
         return fig
 
-    # filtro modello robusto
-    m = str(model_choice).strip().lower()
-    d["_m"] = d["Modello"].astype(str).str.lower().str.strip()
-    if m == "bs":
-        d = d[d["_m"].str.contains("bs")]
+    # Prendi l'ULTIMA data disponibile (replica i grafici “exp …” che hai in tesi)
+    d = _pick_latest_date(d)
+
+    # filtra modello in modo robusto
+    choice = str(model_choice).strip().lower()
+    if choice == "bs":
+        d = d[d["Modello"].map(_is_bs)]
+        title_model = "BS"
     else:
-        d = d[d["_m"].str.contains("rab") | d["_m"].str.contains("rabin")]
+        d = d[d["Modello"].map(_is_rab)]
+        title_model = "Rabinovitch"
 
     if d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) ({model_choice}: nessun dato)")
+        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) – {title_model} (nessun dato)")
         return fig
 
     # asse X
     xcol = "Moneyness" if xmode.lower().startswith("m") else "Strike"
     if xcol not in d.columns:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (colonna {xcol} mancante nel CSV)")
+        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (colonna {xcol} mancante)")
+        return fig
+
+    # se Strike è tutto NaN, avvisa chiaramente
+    if xcol == "Strike" and d["Strike"].isna().all():
+        fig.update_layout(
+            title=f"{ticker} – {measure} Density (Strike) – {title_model} (Strike non ricostruibile)",
+            xaxis_title="Strike (K)",
+            yaxis_title="Densità",
+            margin=dict(l=0, r=0, t=50, b=0),
+        )
         return fig
 
     d = d.dropna(subset=[xcol, "Density"])
     if d.empty:
-        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) (nessun dato)")
+        fig.update_layout(title=f"{ticker} – {measure} Density ({xmode}) – {title_model} (nessun dato)")
         return fig
 
-    # ordino tenori anche se sono 1.43Y, 0.5Y ecc.
-    d["_T"] = _parse_deltaT_to_years(d["DeltaT"])
-    d["_T"] = d["_T"].fillna(999.0)
+    # ordine tenor “tesi”
+    tenor_order = {"1M": 1, "3M": 2, "6M": 3, "1Y": 4}
+    d["_ten"] = d["DeltaT"].astype(str).str.upper().map(lambda x: tenor_order.get(x, 99))
 
-    # plot: una curva per ogni DeltaT
-    for tenor, g in d.sort_values(["_T", xcol]).groupby("DeltaT", dropna=False):
+    # tracce per DeltaT (campane)
+    for tenor, g in d.sort_values(["_ten", xcol]).groupby("DeltaT", dropna=False):
         g = g.sort_values(xcol)
         fig.add_trace(go.Scatter(
             x=g[xcol],
@@ -501,9 +618,15 @@ def fig_density_curve(df_dens: pd.DataFrame, ticker: str, measure: str, xmode: s
             name=str(tenor)
         ))
 
-    title_model = "Rabinovitch" if m != "bs" else "BS"
+    # titolo con data (se disponibile)
+    if "_date_dt" in d.columns and pd.notna(d["_date_dt"]).any():
+        dt_show = pd.to_datetime(d["_date_dt"].dropna().iloc[0]).date()
+        title_date = f" – {dt_show}"
+    else:
+        title_date = ""
+
     fig.update_layout(
-        title=f"{ticker} – {measure} Density ({xmode}) – {title_model}",
+        title=f"{ticker} – {measure} Density ({xmode}) – {title_model}{title_date}",
         xaxis_title="Moneyness (K/S)" if xcol == "Moneyness" else "Strike (K)",
         yaxis_title="Densità",
         margin=dict(l=0, r=0, t=50, b=0),
@@ -556,7 +679,7 @@ if section == "Option pricing":
     # 2) Mispricing % nel tempo (come immagine)
     st.plotly_chart(fig_mispricing_pct_timeseries(df_opt, ticker), use_container_width=True)
 
-    # 3) Sensitivities (Rab-BS)% vs days  <-- AGGIUNTO QUI (prima del rho)
+    # 3) Sensitivities (Rab-BS)% vs days
     st.plotly_chart(fig_sens_diff_pct(df_sens, ticker), use_container_width=True)
 
     # 4) Sensitivity to rho
@@ -571,15 +694,17 @@ elif section == "IV":
 
 elif section == "RND":
     df_dens = data.get("dens", pd.DataFrame())
+    df_opt_all = data.get("opt", pd.DataFrame())
     st.plotly_chart(
-        fig_density_curve(df_dens, ticker, measure="RND", xmode=xmode, model_choice=model_choice),
+        fig_density_curve(df_dens, df_opt_all, ticker, measure="RND", xmode=xmode, model_choice=model_choice),
         use_container_width=True
     )
 
 elif section == "MND":
     df_dens = data.get("dens", pd.DataFrame())
+    df_opt_all = data.get("opt", pd.DataFrame())
     st.plotly_chart(
-        fig_density_curve(df_dens, ticker, measure="MND", xmode=xmode, model_choice=model_choice),
+        fig_density_curve(df_dens, df_opt_all, ticker, measure="MND", xmode=xmode, model_choice=model_choice),
         use_container_width=True
     )
 
@@ -588,7 +713,7 @@ elif section == "Crash Prob":
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
 
 st.caption(
-    "Se RND/MND dice '(nessun dato)': verifica che /data/rnd_mnd_density_all.csv contenga quel ticker "
-    "e le colonne: ticker, Measure, Modello, DeltaT, Moneyness, Density (e Strike/K per il grafico su strike). "
-    "Se il grafico 'rho' è vuoto: in option_pricing_all.csv devono esistere colonne Rab_Price_rho_-1 / Rab_Price_rho_+1 (o simili)."
+    "RND/MND: usa rnd_mnd_density_all.csv (ticker, date, DeltaT, Modello, Measure, Moneyness, Density). "
+    "Se scegli 'Strike' e nel CSV non c’è Strike/K, il grafico prova a ricostruirlo da option_pricing_all.csv "
+    "con Strike = Moneyness * Spot (serve una colonna spot/underlying nel pricing)."
 )
