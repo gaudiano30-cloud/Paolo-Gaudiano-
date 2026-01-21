@@ -858,7 +858,7 @@ def available_expiries_for_density(df_dens: pd.DataFrame, ticker: str, measure: 
 # STREAMLIT UI (MENU A SINISTRA)
 # ==========================================================
 st.set_page_config(page_title="Thesis Dashboard", layout="wide")
-st.title("Paolo Gaudiano – Dal pricing teorico alla realtà di mercato")
+st.title("Paolo Gaudiano – Dal pricing teorico alla realtà di ")
 
 data = load_all_data()
 tickers = available_tickers(data)
@@ -967,5 +967,6 @@ elif section == "MND":
 elif section == "Crash Prob":
     df = by_ticker(data["crash"], ticker)
     st.plotly_chart(fig_crash(df, ticker), use_container_width=True)
+
 
 
